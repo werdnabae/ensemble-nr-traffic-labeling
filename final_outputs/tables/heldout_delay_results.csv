@@ -1,0 +1,7 @@
+method,total_excess_lh,total_abnormal_lh,method_excess_lh,method_abnormal_lh,method_pct_total_excess,method_pct_total_abnormal,incident_reports_pct_excess,incident_reports_pct_abnormal,incident_excluded_excess_lh,incident_excluded_abnormal_lh,incident_excluded_pct_excess,incident_excluded_pct_abnormal,incident_excluded_near_zero_exc,incident_excluded_near_zero_abn,detector_only_excess_lh,detector_only_abnormal_lh,detector_only_pct_excess,detector_only_pct_abnormal,overlap_excess_lh,overlap_abnormal_lh,labeled_steps,anomaly_rate_pct,network
+Incident reports only,6324.5093,5858.377,885.725,870.958,14.0,14.87,14.0,14.87,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,885.725,870.958,121348,2.134,cranberry
+Duan baseline,6324.5093,5858.377,1541.3079,1530.6909,24.37,26.13,14.0,14.87,101.7622,96.0538,1.61,1.64,66.7,72.0,757.345,755.7867,11.97,12.9,783.9629,774.9042,141260,2.484,cranberry
+Full ensemble,6324.5093,5858.377,1966.657,1964.465,31.1,33.53,14.0,14.87,203.7559,189.6082,3.22,3.24,55.7,61.2,1284.6877,1283.1152,20.31,21.9,681.9691,681.3497,129336,2.274,cranberry
+Incident reports only,7874.8789,6751.2139,453.127,438.7322,5.75,6.5,5.75,6.5,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,453.127,438.7322,35584,0.43,tsmo
+Duan baseline,7874.8789,6751.2139,1441.9385,1366.0458,18.31,20.23,5.75,6.5,130.0856,124.5142,1.65,1.84,61.3,66.9,1118.8972,1051.8279,14.21,15.58,323.0413,314.218,104932,1.269,tsmo
+Full ensemble,7874.8789,6751.2139,3078.2554,2929.1553,39.09,43.39,5.75,6.5,24.77,21.552,0.31,0.32,79.6,83.3,2649.8984,2511.9751,33.65,37.21,428.3569,417.1801,277884,3.36,tsmo

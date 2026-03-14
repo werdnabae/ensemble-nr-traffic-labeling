@@ -1,0 +1,23 @@
+# ── data (excluded due to data-use agreement) ──────────────────────────
+data/cranberry/*.parquet
+data/cranberry/*.json
+data/cranberry/*.geojson
+data/tsmo/*.parquet
+data/tsmo/*.json
+data/tsmo/*.geojson
+
+# keep the placeholder files so the directory structure is preserved
+!data/cranberry/.gitkeep
+!data/tsmo/.gitkeep
+
+# ── Python ───────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# ── OS ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db

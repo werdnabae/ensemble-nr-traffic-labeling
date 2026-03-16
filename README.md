@@ -1,24 +1,27 @@
-# Real-Time Ensemble Labeling of Nonrecurrent Traffic Disturbances
+# Traffic State Based Labeling of Nonrecurrent Traffic Disturbances
 
-Reference implementation for the paper:
+Reference implementation for:
 
-> **Real-Time Ensemble Labeling of Nonrecurrent Traffic Disturbances from Speed Data**  
+> **Traffic State Based Labeling of Nonrecurrent Disturbances from Speed Data
+> Using Interpretable Ensemble Detection**  
 > Andrew J. Bae — Carnegie Mellon University
 
 ---
 
 ## Overview
 
-This repository provides the code for an ensemble anomaly labeling framework that
-generates link-level nonrecurrent traffic disturbance labels directly from
-probe-based speed measurements.  The framework combines three complementary
-detectors (robust deviation, speed gradient, upstream slowdown) with
-persistence logic, speed confirmation, and traffic-driven recovery rules.
+This repository provides the code for an interpretable ensemble framework that
+constructs link-level nonrecurrent traffic disturbance labels directly from
+probe-based speed observations. The framework combines three speed-based
+detectors — robust deviation, temporal gradient, and upstream slowdown contrast
+— with persistence filtering, free-flow speed confirmation, and traffic-driven
+recovery logic to produce coherent disturbance episodes with well-defined onset
+and termination times.
 
-Incident reports (e.g. Waze) are used only as optional supporting evidence.
-The primary evaluation metric is the share of *abnormal delay* — delay
-occurring when speed falls below the estimated recurrent variability band —
-captured on held-out data.
+Incident reports serve as optional supporting evidence only. The primary
+evaluation metric is **abnormal delay capture** — the fraction of excess travel
+time (speed below the estimated recurrent lower bound) that is covered by each
+method's labels.
 
 ---
 
@@ -26,36 +29,35 @@ captured on held-out data.
 
 ```
 src/
-  ensemble_labeling.py   Detectors, thresholds, graph neighbors, labeler
-  duan_baseline.py       Duan et al. (2024) slowdown-based baseline
-  delay_metrics.py       Excess and abnormal delay computation
-  timing_metrics.py      Detection latency and termination overhang
-  evaluation_pipeline.py Full evaluation entry point (single command)
+  ensemble_labeling.py        Core detectors, thresholds, episode construction,
+                              recovery logic, and the main run_ensemble_labeler()
+  duan_baseline.py            Duan et al. (2024) slowdown-based baseline
+  delay_metrics.py            Excess and abnormal delay computation
+  timing_metrics.py           Episode extraction, detection latency, boundary analysis
+  run_revised_experiments.py  Main pipeline — runs all experiments and saves results
 
 data/
-  cranberry/             ← place your Cranberry data files here (see below)
-  tsmo/                  ← place your TSMO data files here (see below)
+  cranberry/                  ← place Cranberry data files here (see below)
+  tsmo/                       ← place TSMO data files here (see below)
 
 final_outputs/
-  tables/                Pre-computed result tables (CSV)
-  figures/               Pre-computed figures (PNG)
+  tables/                     Pre-computed result tables (CSV and Parquet)
+  figures/                    Paper figures (PNG)
+  ml_baseline_xgb.pkl         Trained XGBoost baseline model (TSMO calibration)
+  ml_simple_xgb.pkl           Trained XGBoost model (simple threshold variant)
 
-FINAL_RESULTS.md         Complete results in markdown
+README.md
 requirements.txt
+.gitignore
 ```
 
 ---
 
 ## Data
 
-**The data cannot be included in this repository due to a data-use agreement
-with the data provider.**
+**Data cannot be included due to a data-use agreement with the provider.**
 
-To reproduce the results, you will need to obtain 5-minute probe speed data
-and incident-report data for the two networks independently, then place them
-in the expected locations described below.
-
-### Expected file locations
+### Expected file layout
 
 ```
 data/
@@ -71,109 +73,67 @@ data/
     tsmo_upstream_mapping.json
 ```
 
-### Data format specification
+### Data format
 
-#### Speed data  (`*_speed_data.parquet`)
-
-A Parquet file that loads as a `pandas.DataFrame` with the following structure:
+#### Speed data (`*_speed_data.parquet`)
 
 | Property | Specification |
 |---|---|
 | Index | `pandas.DatetimeIndex`, 5-minute resolution |
 | Columns | TMC segment ID strings (e.g. `"104-04540"`) |
-| Values | Float, speed in mph |
-| Active hours | 05:30–20:55 on weekdays only (no overnight or weekend rows) |
-| Coverage | Cranberry: Feb 2022 – Jan 2024 · TSMO: Feb 2022 – Feb 2023 |
+| Values | Float, speed in mph (NaN for missing observations) |
+| Active hours | 05:30–20:55 on weekdays only — no overnight or weekend rows |
 
-```python
-import pandas as pd
-df = pd.read_parquet("data/cranberry/cranberry_speed_data.parquet")
-# df.shape → (97092, 78) for Cranberry full dataset
-# df.index → DatetimeIndex(['2022-02-01 05:30:00', '2022-02-01 05:35:00', ...])
-# df.columns → Index(['104-04439', '104-04440', ...], dtype='object')
-# df.dtypes → float64 (may contain NaN for missing observations)
-```
+#### Incident reports (`*_incident_reports.parquet`)
 
-#### Incident reports  (`*_incident_reports.parquet`)
+Same shape and index as the speed file. Values are binary 0/1 indicating
+whether a crowd-sourced incident report overlaps the link at that time interval.
 
-Same shape and index as the speed file.  Values are binary 0/1 indicating
-whether a crowd-sourced incident report is mapped to that link at that time.
+#### Network geometry (`*_network.geojson`)
 
-```python
-inc = pd.read_parquet("data/cranberry/cranberry_incident_reports.parquet")
-# inc.shape → same as speed_df
-# inc.dtypes → int64 or float64, values in {0, 1}
-```
+Standard GeoJSON FeatureCollection with required properties per feature:
 
-#### Network geometry  (`*_network.geojson`)
+| Property | Description |
+|---|---|
+| `tmc` | TMC segment ID — must match speed/incident column names |
+| `miles` | Link length in miles |
+| `roadnumber` | Route designation (e.g. `"I-76"`, `"I-79"`) |
+| `geometry` | LineString or MultiLineString (WGS84) |
 
-Standard GeoJSON `FeatureCollection`.  Each feature represents one TMC
-segment.  Required properties:
+#### Upstream adjacency mapping (`*_upstream_mapping.json`)
 
-| Property | Type | Description |
-|---|---|---|
-| `tmc` | string | TMC segment ID — must match speed/incident column names |
-| `miles` | float | Link length in miles |
-| `roadnumber` | string | Route designation (e.g. `"I-76"`, `"I-79"`, `"I-695"`) |
-| `geometry` | LineString or MultiLineString | WGS84 / CRS84 |
-
-Optional properties used for context (not required to run): `direction`,
-`roadname`, `county`, `state`.
-
-```python
-import geopandas as gpd
-gdf = gpd.read_file("data/cranberry/cranberry_network.geojson")
-# gdf.columns includes: tmc, miles, roadnumber, geometry, ...
-```
-
-#### Upstream adjacency mapping  (`*_upstream_mapping.json`)
-
-A JSON object mapping each TMC segment ID to a list of its immediate upstream
-(predecessor) TMC segment IDs in the directed road graph.
-
-```json
-{
-  "104-04540": ["104-04539"],
-  "104-04539": ["104-04538", "104N04538"],
-  ...
-}
-```
-
-```python
-import json
-with open("data/cranberry/cranberry_upstream_mapping.json") as f:
-    upstream = json.load(f)
-# upstream["104-04540"] → ["104-04539"]
-```
+JSON dict mapping each TMC ID to a list of its immediate upstream TMC IDs:
+`{"104-04540": ["104-04539"], ...}`
 
 ### Data source
 
-The speed data used in this work were derived from INRIX probe-speed feeds
-for TMC segments, available through RITIS (Regional Integrated Transportation
-Information System).  Incident reports were sourced from Waze for Cities
-crowd-sourced incident feeds, spatially matched to TMC segments.  Both feeds
-are available to transportation agencies and researchers through data-sharing
-agreements.
+Speed data are derived from INRIX probe-speed feeds for TMC segments, available
+through RITIS (Regional Integrated Transportation Information System). Incident
+reports are from a crowd-sourced incident feed spatially matched to TMC segments.
+Both are available to agencies and researchers through data-sharing agreements.
+The pipeline is compatible with any provider that matches the schema above.
 
-If you have access to compatible 5-minute TMC speed data from another provider
-(e.g. HERE, TomTom), the pipeline will work as long as the files match the
-schema above.
+### Network summary
+
+| Network | Location | Links | Sessions | Calib / Eval | Period |
+|---|---|---|---|---|---|
+| TSMO (calibration) | Howard County, MD | 228 | 260 | 65 / 195 | Feb 2022–Feb 2023 |
+| Cranberry (transfer) | Pittsburgh, PA | 78 | 522 | 130 / 392 | Feb 2022–Jan 2024 |
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/ensemble-traffic-labeling
-cd ensemble-traffic-labeling
+git clone https://github.com/anomalyco/ensemble-nr-traffic-labeling
+cd ensemble-nr-traffic-labeling
 pip install -r requirements.txt
 ```
 
 Or with uv:
 
 ```bash
-uv venv .venv
-source .venv/bin/activate   # or .venv\Scripts\activate on Windows
+uv venv .venv && source .venv/bin/activate
 uv pip install -r requirements.txt
 ```
 
@@ -184,81 +144,143 @@ uv pip install -r requirements.txt
 Place data files in the locations described above, then run:
 
 ```bash
-python src/evaluation_pipeline.py
+python src/run_revised_experiments.py
 ```
 
-This single command (~4–8 minutes on a modern laptop):
+Runtime: approximately 5–15 minutes on a modern laptop.
 
-1. Loads and filters speed and incident data for both networks
-2. Applies the 25 / 75 temporal split (calibration → held-out evaluation)
-3. Computes all calibration-period frozen statistics (no leakage into eval)
-4. Runs three methods: incident-reports-only, Duan (2024) baseline, full ensemble
-5. Runs the ablation study (four detector subsets)
-6. Computes timing analysis (detection latency and termination overhang)
-7. Analyses unlabeled abnormal delay (heatmaps)
-8. Saves all tables to `final_outputs/tables/`
-9. Saves all figures to `final_outputs/figures/`
-10. Writes `FINAL_RESULTS.md`
+This script:
+1. Loads speed and incident data for both networks
+2. Applies the 25/75 temporal split (calibration → held-out evaluation)
+3. Computes all calibration-period statistics with no leakage into the eval period
+4. Runs all methods: incident reports only, Duan (2024) baseline, XGBoost
+   baseline, and full ensemble
+5. Calibrates parameters via grid search on TSMO, transfers unchanged to Cranberry
+6. Runs the detector ablation study and staged component ablation
+7. Runs ±20% parameter sensitivity analysis
+8. Computes detection latency, episode quality, and boundary error rates
+9. Saves all result tables to `final_outputs/tables/`
 
-Pre-computed results (produced with the original data) are already in
-`final_outputs/` and `FINAL_RESULTS.md` for reference.
+Pre-computed results are already in `final_outputs/tables/` if you want to
+inspect outputs without re-running.
+
+### Using the pre-trained XGBoost model
+
+The trained XGBoost model is provided in `final_outputs/ml_baseline_xgb.pkl`.
+`run_revised_experiments.py` will load it automatically if found and skip
+retraining. To force retraining, delete the `.pkl` file before running.
 
 ---
 
-## Parameter configuration
+## Calibration–transfer protocol
 
-The final configuration was calibrated on the Cranberry network calibration
-period and applied without modification to TSMO:
+Parameters are calibrated on **TSMO** (the denser, higher-frequency network)
+and transferred to **Cranberry** without any re-tuning.
+
+| | TSMO | Cranberry |
+|---|---|---|
+| Hyperparameter selection | Grid search on first 25% | Not used |
+| Speed statistics | First 25% | First 25% (local baseline only) |
+| Evaluation | Last 75% | Last 75% |
+
+The IQR-based normalisation in each detector adapts automatically to each
+network's historical speed distribution; only the multiplier values are shared.
+
+### Final calibrated parameters
 
 | Parameter | Value | Description |
 |---|---|---|
-| SND IQR multiplier | 2.5 | Robust deviation detector sensitivity |
-| Gradient IQR multiplier | 1.2 | Speed gradient detector sensitivity |
-| Confirmation threshold | 0.70 × FFS | Speed must drop below 70% of free-flow to confirm |
-| Minimum run duration | 20 min | Shortest labeled episode |
-
-Temporal protocol: first 25% of sessions = calibration, remaining 75% = evaluation.
+| `snd_c` — deviation IQR multiplier | 2.0 | Deviation detector threshold |
+| `grad_c` — gradient IQR multiplier | 1.0 | Gradient detector threshold |
+| `conf_f` — confirmation factor | 0.75 | Speed must drop below 75% of FFS |
+| `min_dur` — minimum persistence | 15 min (3 steps) | Noise pre-filter |
 
 ---
 
-## Key results (from pre-computed outputs)
+## Baselines
+
+### Duan et al. (2024)
+
+Implemented from:
+
+> Duan, H., Wu, H., and Qian, S. (2024). *Know unreported roadway incidents in
+> real-time: Early traffic anomaly detection.* arXiv:2412.10892v2.
+
+Core denoising functions reproduced from the reference; session-based day
+segmentation replaces fixed-length day splits. See `src/duan_baseline.py`.
+
+### XGBoost baseline (incident-supervised)
+
+An XGBoost classifier trained to predict crowd-sourced incident report indicators
+from raw probe-speed features: current speed, four lags, and instantaneous speed
+change — no ensemble-derived features. Trained on TSMO calibration data and
+applied to both networks at a threshold selected to match the ensemble's 5.3%
+anomaly rate on TSMO. See `src/run_revised_experiments.py`.
+
+---
+
+## Key results
 
 ### Abnormal delay capture — held-out evaluation
 
-| Method | Cranberry | TSMO |
+| Method | TSMO (calibration) | Cranberry (transfer) |
 |---|---|---|
-| Incident reports only | 14.9% | 6.5% |
-| Duan (2024) baseline | 26.1% | 20.2% |
-| **Full ensemble** | **33.5%** | **43.4%** |
+| Incident reports | 6.5% | 14.9% |
+| Duan (2024) baseline | 20.2% | 26.1% |
+| XGBoost (speed-only) | 46.9% | 19.4% |
+| **Full ensemble** | **55.6%** | **38.6%** |
 
-Detector-only abnormal delay (no incident report present):
-Cranberry 21.9%, TSMO 37.2% of total abnormal delay.
+The XGBoost baseline captures 46.9% on TSMO but only 19.4% on Cranberry —
+incident-supervised prediction fails to transfer across networks. The ensemble
+transfers cleanly (55.6% → 38.6%) because its IQR-based normalisation adapts
+to each network's speed distribution.
 
-Incident-report periods excluded by the method: 61–83% have near-zero
-abnormal delay, supporting the claim that the confirmation filter correctly
-rejects low-impact reports.
+### Episode quality
 
-Unlabeled abnormal delay: 61% (Cranberry) and 67% (TSMO) occurs during
-predictable AM/PM peak hours, indicating it reflects recurrent congestion
-correctly excluded by the method.
+| Method | Network | Near-zero episodes | Quality (%) | Median dur. |
+|---|---|---|---|---|
+| Incident reports | TSMO | 37.0% | 72.9% | 30 min |
+| XGBoost | TSMO | 37.5% | 70.7% | 25 min |
+| **Full ensemble** | TSMO | **4.9%** | **97.3%** | **60 min** |
+| **Full ensemble** | Cranberry | **4.6%** | **100%** | **50 min** |
+
+### Detection timing (TSMO)
+
+The ensemble achieves a median onset latency of −5 min relative to the first
+below-v_rec step (gradient detector fires before speed crosses the recurrent
+lower bound), compared to 0 min for incident reports and +5 min for Duan
+and XGBoost.
 
 ---
 
-## Baseline
+## Output files
 
-The Duan baseline is implemented from:
+| File | Description |
+|---|---|
+| `tables/heldout_delay_results.csv` | Abnormal delay capture, all methods × both networks |
+| `tables/ablation_results.csv` | Detector-subset and component ablation |
+| `tables/sensitivity_results.csv` | ±20% parameter sensitivity |
+| `tables/filtering_table.csv` | Per-episode near-zero fraction and quality |
+| `tables/episode_duration_statistics.csv` | Duration distribution statistics |
+| `tables/timing_results.csv` | Detection latency and episode quality |
+| `tables/boundary_error_rates.csv` | Recovery-end boundary analysis |
+| `tables/temporal_precision.csv` | Median detection offset from delay peak |
+| `tables/persistence_staged_ablation.csv` | Staged pipeline component contributions |
+| `tables/grid_search_tsmo.csv` | Full TSMO hyperparameter grid results |
+| `tables/tsmo_ml_labels.parquet` | XGBoost labels for TSMO eval period |
+| `tables/cran_ml_labels.parquet` | XGBoost labels for Cranberry eval period |
+| `figures/ensemble_diagram.png` | Conceptual overview of the framework |
+| `figures/detector_signal_comparison.png` | Detector activation decomposition |
+| `figures/fig_network_layout.png` | Spatial layout of both networks |
+| `figures/fig_recovery_end.png` | Recovery-end comparison (4 methods) |
+| `figures/case_study_comparison.png` | Case studies (4 methods, TSMO) |
+| `figures/fig_appendix_casestudies_1.png` | Appendix case studies (panels a–c) |
+| `figures/fig_appendix_casestudies_2.png` | Appendix case studies (panels d–f) |
 
-> Duan, H., Wu, H., and Qian, S. (2024). *Know unreported roadway incidents
-> in real-time: Early traffic anomaly detection.* arXiv:2412.10892v2.
-
-Core functions (`label_all_incident_contain_significant_sd` and
-`label_long_last_abnormal_sd_as_incident`) are reproduced verbatim.
-The only adaptation is session-based day segmentation (replacing the original
-fixed-length day split) to handle data gaps correctly.  See
-`src/duan_baseline.py` for full documentation.
+---
 
 ---
 
 ## License
 
-MIT License.  See `LICENSE` for details.
+MIT License. See `LICENSE` for details.

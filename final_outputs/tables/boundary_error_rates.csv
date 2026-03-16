@@ -1,0 +1,9 @@
+n,pct_premature,pct_overext,pct_within_10,pct_within_15,med_delta,network,method
+2788,44.9,14.9,40.2,49.9,-10.0,TSMO,Incident reports
+15852,56.3,2.4,41.3,48.9,-15.0,TSMO,Duan baseline
+41190,36.5,18.3,45.2,58.8,0.0,TSMO,Supervised ML
+33335,54.0,5.0,41.0,57.8,-15.0,TSMO,Full ensemble
+6084,54.5,15.2,30.3,38.3,-20.0,Cranberry,Incident reports
+12422,69.0,3.7,27.3,33.2,-40.0,Cranberry,Duan baseline
+2333,74.9,0.9,24.2,28.7,-60.0,Cranberry,Supervised ML
+11365,73.7,0.6,25.7,37.0,-25.0,Cranberry,Full ensemble

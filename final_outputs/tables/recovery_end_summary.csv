@@ -1,0 +1,7 @@
+method,n,med_delta,med_abs_delta,pct_within_10min,pct_overextended_15,pct_premature_15,network
+Incident reports,1196,0.0,40.0,19.6,36.5,37.3,TSMO
+Duan baseline,8901,-15.0,30.0,24.2,24.1,45.6,TSMO
+Full ensemble,33548,-5.0,20.0,32.0,24.7,30.2,TSMO
+Incident reports,929,-30.0,55.0,17.9,18.7,58.3,Cranberry
+Duan baseline,3490,-40.0,45.0,22.3,6.0,65.7,Cranberry
+Full ensemble,11373,-25.0,25.0,24.8,3.1,60.4,Cranberry

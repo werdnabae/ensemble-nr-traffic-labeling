@@ -1,0 +1,7 @@
+method,network,n_episodes_with_delay,offset_median,offset_mean,offset_p25,offset_p75
+Incident reports,TSMO,3542,-10.0,-15.5,-20.0,0.0
+Incident reports,Cranberry,7456,-15.0,-35.9,-35.0,-5.0
+Duan baseline,TSMO,18697,-10.0,-10.9,-15.0,-5.0
+Duan baseline,Cranberry,15483,-5.0,-19.2,-15.0,0.0
+Full ensemble,TSMO,36685,-20.0,-28.3,-30.0,-10.0
+Full ensemble,Cranberry,12728,-10.0,-26.4,-20.0,-5.0

@@ -1,4 +1,4 @@
-# ── data (excluded due to data-use agreement) ──────────────────────────
+# ── raw data (excluded due to data-use agreement) ─────────────────────
 data/cranberry/*.parquet
 data/cranberry/*.json
 data/cranberry/*.geojson
@@ -6,11 +6,11 @@ data/tsmo/*.parquet
 data/tsmo/*.json
 data/tsmo/*.geojson
 
-# keep the placeholder files so the directory structure is preserved
+# keep directory placeholders
 !data/cranberry/.gitkeep
 !data/tsmo/.gitkeep
 
-# ── Python ───────────────────────────────────────────────────────────────
+# ── Python ────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -18,6 +18,17 @@ __pycache__/
 venv/
 .env
 
-# ── OS ───────────────────────────────────────────────────────────────────
+# ── Jupyter ───────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── OS ────────────────────────────────────────────────────────────────
 .DS_Store
+Icon
 Thumbs.db
+
+# ── Editors ───────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo

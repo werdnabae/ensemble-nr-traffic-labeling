@@ -612,13 +612,28 @@ def extend_recovery(
             while t < n and sids[t] == end_session:
                 es = max(hard_short, ss_arr[t])
                 el = max(hard_long, sl_arr[t])
+                # Short check: 2 of next 3 steps strictly exceed threshold.
+                # Option B: label through the END of the qualifying window
+                # before declaring recovery, so the episode captures the full
+                # disturbance trajectory up to the confirmed recovery point.
                 w3 = spd_arr[t : min(t + 3, n)]
                 v3 = w3[~np.isnan(w3)]
                 if len(v3) >= 2 and np.sum(v3 > es) >= 2:
+                    w_end = min(t + 2, n - 1)
+                    while w_end > t and sids[w_end] != end_session:
+                        w_end -= 1
+                    result.iloc[t : w_end + 1] = 1.0
+                    t = w_end + 1
                     break
+                # Long check: 3 of next 5 steps strictly exceed threshold.
                 w5 = spd_arr[t : min(t + 5, n)]
                 v5 = w5[~np.isnan(w5)]
                 if len(v5) >= 3 and np.sum(v5 > el) >= 3:
+                    w_end = min(t + 4, n - 1)
+                    while w_end > t and sids[w_end] != end_session:
+                        w_end -= 1
+                    result.iloc[t : w_end + 1] = 1.0
+                    t = w_end + 1
                     break
                 result.iloc[t] = 1.0
                 t += 1
@@ -659,16 +674,27 @@ def run_ensemble_labeler(
     conf_window: int = 3,
     links: Optional[List[str]] = None,
     verbose: bool = True,
+    # ── detector ablation flags ──────────────────────────────────────────────
     use_snd: bool = True,
     use_gradient: bool = True,
     use_slowdown: bool = True,
+    # ── component ablation flags ─────────────────────────────────────────────
+    skip_persistence: bool = False,
+    skip_recovery: bool = False,
 ) -> pd.DataFrame:
     """Run the full per-link ensemble labeling pipeline.
 
-    Ablation flags (all True by default):
-      use_snd      – include SND detector in non-report OR
-      use_gradient – include NW and weighted gradient detectors
-      use_slowdown – include slowdown speed detector
+    Detector ablation flags (all True by default):
+      use_snd       – include distribution-deviation detector
+      use_gradient  – include temporal gradient detector
+      use_slowdown  – include upstream slowdown contrast detector
+
+    Component ablation flags (all False by default):
+      skip_persistence – bypass minimum-duration filter (set min_dur = 1 step).
+                         Isolates the effect of persistence modeling.
+      skip_recovery    – bypass traffic-driven recovery extension.
+                         Episode ends when the detector candidate goes cold,
+                         rather than when speed returns to the recurrent band.
     """
     if links is None:
         links = list(speed_df.columns)
@@ -724,7 +750,10 @@ def run_ensemble_labeler(
 
         # NON-REPORT BRANCH
         nr_raw = ((_s == 1) | (_sl == 1) | (_n == 1) | (_w == 1)).astype(float)
-        nr_flt = filter_short_ones_with_time(nr_raw, min_nonreport_min, interval_min)
+        # Persistence modeling: suppresses isolated fluctuations.
+        # skip_persistence=True reduces the minimum to one step for ablation.
+        effective_min_dur = interval_min if skip_persistence else min_nonreport_min
+        nr_flt = filter_short_ones_with_time(nr_raw, effective_min_dur, interval_min)
         nr_lbl = (
             filter_by_confirmation_thresholds(
                 nr_flt, spd, nw_g, conf_nr, conf_min_len, conf_window, interval_min
@@ -744,7 +773,9 @@ def run_ensemble_labeler(
         # COMBINE
         combined = ((rep_lbl == 1) | (nr_lbl == 1)).astype(float)
         combined = fill_short_gaps(combined, max_gap_min, interval_min)
-        if not (np.isnan(h_rs) or np.isnan(h_rl)):
+        # Recovery extension: keeps label active until speed returns to the
+        # recurrent regime.  skip_recovery=True bypasses this for ablation.
+        if (not skip_recovery) and (not (np.isnan(h_rs) or np.isnan(h_rl))):
             combined = extend_recovery(
                 combined,
                 spd,
